@@ -249,6 +249,35 @@ class Chain(BaseModel, ABC):
             f" but not both. Got args: {args} and kwargs: {kwargs}."
         )
 
+    def crun(self, *args: Any, callbacks: Callbacks = None, **kwargs: Any) -> dict:
+        """Run the chain as text in, text out or multiple variables, text out."""
+        if len(self.output_keys) != 1:
+            raise ValueError(
+                f"`run` not supported when there is not exactly "
+                f"one output key. Got {self.output_keys}."
+            )
+
+        if args and not kwargs:
+            if len(args) != 1:
+                raise ValueError("`run` supports only one positional argument.")
+            return self(args[0], callbacks=callbacks)
+
+        if kwargs and not args:
+            return self(kwargs, callbacks=callbacks)
+
+        if not kwargs and not args:
+            raise ValueError(
+                "`run` supported with either positional arguments or keyword arguments,"
+                " but none were provided."
+            )
+
+        raise ValueError(
+            f"`run` supported with either positional arguments or keyword arguments"
+            f" but not both. Got args: {args} and kwargs: {kwargs}."
+        )
+
+
+
     async def arun(self, *args: Any, callbacks: Callbacks = None, **kwargs: Any) -> str:
         """Run the chain as text in, text out or multiple variables, text out."""
         if len(self.output_keys) != 1:

@@ -70,6 +70,7 @@ class SQLDatabaseChain(Chain):
                 prompt = values.get("prompt") or SQL_PROMPTS.get(
                     database.dialect, PROMPT
                 )
+                print("\nPrompt is: " + str(prompt) + "\n")
                 values["llm_chain"] = LLMChain(llm=values["llm"], prompt=prompt)
         return values
 
@@ -110,6 +111,7 @@ class SQLDatabaseChain(Chain):
             "table_info": table_info,
             "stop": ["\nSQLResult:"],
         }
+        print("\nCall ai with:\n" + str(llm_inputs))
         intermediate_steps: List = []
         try:
             intermediate_steps.append(llm_inputs)  # input: sql generation
@@ -129,6 +131,7 @@ class SQLDatabaseChain(Chain):
                 query_checker_prompt = self.query_checker_prompt or PromptTemplate(
                     template=QUERY_CHECKER, input_variables=["query", "dialect"]
                 )
+                print("\n using query checker: \n" + str(query_checker_prompt))
                 query_checker_chain = LLMChain(
                     llm=self.llm_chain.llm, prompt=query_checker_prompt
                 )
@@ -139,6 +142,7 @@ class SQLDatabaseChain(Chain):
                 checked_sql_command: str = query_checker_chain.predict(
                     callbacks=_run_manager.get_child(), **query_checker_inputs
                 ).strip()
+                print(f"\nCalling predict on inputs {str(query_checker_inputs)}\n outputs\n {checked_sql_command}\n")
                 intermediate_steps.append(
                     checked_sql_command
                 )  # output: sql generation (checker)
@@ -151,7 +155,6 @@ class SQLDatabaseChain(Chain):
                 result = self.database.run(checked_sql_command)
                 intermediate_steps.append(str(result))  # output: sql exec
                 sql_cmd = checked_sql_command
-
             _run_manager.on_text("\nSQLResult: ", verbose=self.verbose)
             _run_manager.on_text(result, color="yellow", verbose=self.verbose)
             # If return direct, we just set the final result equal to
@@ -168,11 +171,14 @@ class SQLDatabaseChain(Chain):
                     callbacks=_run_manager.get_child(),
                     **llm_inputs,
                 ).strip()
+                print(f"\nCall AI predict on final answer inputs {str(llm_inputs)}\n outputs\n{result}\n\n {final_result}\n\n{sql_cmd}\n\n")
                 intermediate_steps.append(final_result)  # output: final answer
                 _run_manager.on_text(final_result, color="green", verbose=self.verbose)
             chain_result: Dict[str, Any] = {self.output_key: final_result}
             if self.return_intermediate_steps:
                 chain_result[INTERMEDIATE_STEPS_KEY] = intermediate_steps
+            chain_result['sql_command'] = sql_cmd
+
             return chain_result
         except Exception as exc:
             # Append intermediate steps to exception, to aid in logging and later
