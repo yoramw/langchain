@@ -22,11 +22,14 @@ class SQLDatabase:
         sample_rows_in_table_info: int = 3,
         indexes_in_table_info: bool = False,
         custom_table_info: Optional[dict] = None,
+        truncate_col: int = 50,
         view_support: bool = False,
     ):
         """Create engine from database URI."""
         self._connection = connection
         self._schema = schema
+        self._truncate_col = truncate_col
+        print(f"\ntruncate_col: {truncate_col}\n")
         sql = """SELECT c.relname,a.attname, t.typname, c.oid
          FROM pg_catalog.pg_attribute a INNER JOIN pg_catalog.pg_class c ON (a.attrelid=c.oid) LEFT OUTER JOIN pg_catalog.pg_attrdef ad ON (a.attrelid=ad.adrelid AND a.attnum = ad.adnum) LEFT OUTER JOIN pg_catalog.pg_description dsc ON (c.oid=dsc.objoid AND a.attnum = dsc.objsubid) left outer join pg_catalog.pg_type t on (a.atttypid = t.oid)
          WHERE NOT a.attisdropped ORDER BY c.relname,a.attnum""";
@@ -93,6 +96,7 @@ class SQLDatabase:
         database = result.path[1:]
         hostname = result.hostname
         port = result.port
+        print(f"\nfrom_uri:{engine_args}\n")
         return cls(psycopg2.connect(
                 host=hostname,
                 port=port,
@@ -179,7 +183,7 @@ class SQLDatabase:
         final_str = "\n\n".join(create_tables)
         return final_str
     
-    def run(self, command: str, fetch: str = "all") -> str:
+    def run(self, command: str, fetch: str = "all") -> tuple[str,str]:
         """Execute a SQL command and return a string representing the results.
 
         If the statement returns rows, a string of the results is returned.
@@ -188,6 +192,7 @@ class SQLDatabase:
 
         cursor = self._connection.cursor()
         cursor.execute(command)
+        colnames = [desc[0] for desc in cursor.description]
         if "select" in  command.lower():
             if fetch == "all":
                 result = cursor.fetchall()
@@ -195,8 +200,16 @@ class SQLDatabase:
                 result = cursor.fetchone()[0]  # type: ignore
             else:
                 raise ValueError("Fetch parameter must be either 'one' or 'all'")
-            return str(result)
-        return ""
+            result = self._truncate_results(result)
+            return tuple(colnames), result
+        return "",""
+
+    def _truncate_results(self, results) -> List:
+        list = []
+        for row in results:
+            list.append(tuple(e[:self._truncate_col] if isinstance(e, str) else e for e in row))
+        return list
+
 
     def get_table_info_no_throw(self, table_names: Optional[List[str]] = None) -> str:
         """Get information about specified tables.

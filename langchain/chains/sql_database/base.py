@@ -5,7 +5,7 @@ import warnings
 from typing import Any, Dict, List, Optional
 
 from pydantic import Extra, Field, root_validator
-
+import json
 from langchain.base_language import BaseLanguageModel
 from langchain.callbacks.manager import CallbackManagerForChainRun
 from langchain.chains.base import Chain
@@ -42,9 +42,11 @@ class SQLDatabaseChain(Chain):
     input_key: str = "query"  #: :meta private:
     output_key: str = "result"  #: :meta private:
     return_intermediate_steps: bool = False
+    """if true willl apply huristic to decide if the send the result back to llm"""
+    auto_mode: bool = False
     """Whether or not to return the intermediate steps along with the final answer."""
     return_direct: bool = False
-    """Whether or not to return the result of querying the SQL table directly."""
+    """Whether or not to return the result of querying the SQL table datly."""
     use_query_checker: bool = False
     """Whether or not the query checker tool should be used to attempt 
     to fix the initial SQL from the LLM."""
@@ -61,7 +63,7 @@ class SQLDatabaseChain(Chain):
     def raise_deprecation(cls, values: Dict) -> Dict:
         if "llm" in values:
             warnings.warn(
-                "Directly instantiating an SQLDatabaseChain with an llm is deprecated. "
+                "datly instantiating an SQLDatabaseChain with an llm is deprecated. "
                 "Please instantiate with llm_chain argument or using the from_llm "
                 "class method."
             )
@@ -111,7 +113,6 @@ class SQLDatabaseChain(Chain):
             "table_info": table_info,
             "stop": ["\nSQLResult:"],
         }
-        print("\nCall ai with:\n" + str(llm_inputs))
         intermediate_steps: List = []
         try:
             intermediate_steps.append(llm_inputs)  # input: sql generation
@@ -124,8 +125,9 @@ class SQLDatabaseChain(Chain):
                 intermediate_steps.append(
                     sql_cmd
                 )  # output: sql generation (no checker)
+                print(f"\nRunning sql_cmd: {sql_cmd}")
                 intermediate_steps.append({"sql_cmd": sql_cmd})  # input: sql exec
-                result = self.database.run(sql_cmd)
+                header, result = self.database.run(sql_cmd)
                 intermediate_steps.append(str(result))  # output: sql exec
             else:
                 query_checker_prompt = self.query_checker_prompt or PromptTemplate(
@@ -152,7 +154,7 @@ class SQLDatabaseChain(Chain):
                 intermediate_steps.append(
                     {"sql_cmd": checked_sql_command}
                 )  # input: sql exec
-                result = self.database.run(checked_sql_command)
+                header,result = self.database.run(checked_sql_command)
                 intermediate_steps.append(str(result))  # output: sql exec
                 sql_cmd = checked_sql_command
             _run_manager.on_text("\nSQLResult: ", verbose=self.verbose)
@@ -160,8 +162,16 @@ class SQLDatabaseChain(Chain):
             # If return direct, we just set the final result equal to
             # the result of the sql query result, otherwise try to get a human readable
             # final answer
-            if self.return_direct:
-                final_result = result
+            chain_result: Dict[str, Any] = {}
+            if self.return_direct or (self.auto_mode and len(result)>0 and (len(result[0]) * len(result)) > 12):
+                print(f"\nskipping NL response, returning table results {'auto mode' if self.auto_mode else ''}")
+                if(len(result)>0):
+                    print(f" len of {str(result[0])}  is {str(len(result[0]))}")
+                final_result = ""
+                sql_result = {}
+                sql_result['header'] = header
+                sql_result['data'] = result
+                chain_result['sql_result'] = sql_result
             else:
                 _run_manager.on_text("\nAnswer:", verbose=self.verbose)
                 input_text += f"{sql_cmd}\nSQLResult: {result}\nAnswer:"
@@ -174,10 +184,14 @@ class SQLDatabaseChain(Chain):
                 print(f"\nCall AI predict on final answer inputs {str(llm_inputs)}\n outputs\n{result}\n\n {final_result}\n\n{sql_cmd}\n\n")
                 intermediate_steps.append(final_result)  # output: final answer
                 _run_manager.on_text(final_result, color="green", verbose=self.verbose)
-            chain_result: Dict[str, Any] = {self.output_key: final_result}
             if self.return_intermediate_steps:
                 chain_result[INTERMEDIATE_STEPS_KEY] = intermediate_steps
+            chain_result[self.output_key] =  final_result
             chain_result['sql_command'] = sql_cmd
+            sql_result = {}
+            sql_result['header'] = header
+            sql_result['data'] = result
+            chain_result['sql_result'] = sql_result
 
             return chain_result
         except Exception as exc:

@@ -124,6 +124,7 @@ class Chain(BaseModel, ABC):
         callback_manager = CallbackManager.configure(
             callbacks, self.callbacks, self.verbose
         )
+        print(f"\nDEBUG: base chain inputs: {str(inputs)}")
         new_arg_supported = inspect.signature(self._call).parameters.get("run_manager")
         run_manager = callback_manager.on_chain_start(
             {"name": self.__class__.__name__},

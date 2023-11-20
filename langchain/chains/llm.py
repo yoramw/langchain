@@ -67,6 +67,7 @@ class LLMChain(Chain):
         run_manager: Optional[CallbackManagerForChainRun] = None,
     ) -> Dict[str, str]:
         response = self.generate([inputs], run_manager=run_manager)
+#        print(f"\nLLM: inputs:\n{str(inputs)}\noutputs:\n{str(response)}")
         return self.create_outputs(response)[0]
 
     def generate(
@@ -76,6 +77,7 @@ class LLMChain(Chain):
     ) -> LLMResult:
         """Generate LLM result from inputs."""
         prompts, stop = self.prep_prompts(input_list, run_manager=run_manager)
+        print(f"\nLLM: prompt: {str(self.prompt)}\n inputs: {str(input_list)} \nprompts:\n{str(prompts)}")
         return self.llm.generate_prompt(
             prompts, stop, callbacks=run_manager.get_child() if run_manager else None
         )
